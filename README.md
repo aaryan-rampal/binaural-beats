@@ -39,17 +39,7 @@ open target/Binaural.app
 
 `bundle.sh` builds `target/Binaural.app`, a background app with no Dock icon. Copy it to `/Applications` and add it under System Settings > General > Login Items to start it at login.
 
-```
-Play
-L 145 Hz · R 155 Hz
-Output: opens on Play
-──────────────────────
-Beat: 10 Hz · alpha    ▸   2, 6, 10, 15, 20 or 40 Hz
-Carrier: 150 Hz        ▸   100 to 400 Hz
-Volume: 25%            ▸   5 to 50%
-──────────────────────
-Quit Binaural       ⌘Q
-```
+<img src="docs/menu.png" width="400" alt="The menu bar app while playing, with the Beat submenu open">
 
 The menu bar shows `∿` when idle, `∿ 15 Hz` while playing and `∿ !` after a failure, with the error text inside the menu.
 
