@@ -30,6 +30,8 @@ pub struct Player {
     stream_id: u64,
     logger: Logger,
     error: Option<String>,
+    /// Why playback stopped on its own when that was not a failure, such as an output switch.
+    notice: Option<String>,
     play_started: Option<Instant>,
     played: Duration,
 }
@@ -45,6 +47,7 @@ impl Player {
             stream_id: 0,
             logger,
             error: None,
+            notice: None,
             play_started: None,
             played: Duration::ZERO,
         }
@@ -68,6 +71,11 @@ impl Player {
     /// The most recent failure, cleared by the next successful Play.
     pub fn error(&self) -> Option<&str> {
         self.error.as_deref()
+    }
+
+    /// What the menu should explain: the failure if there is one, else why playback paused.
+    pub fn message(&self) -> Option<&str> {
+        self.error.as_deref().or(self.notice.as_deref())
     }
 
     /// Appends to this run's log.
@@ -107,6 +115,7 @@ impl Player {
         self.device = Some(output.device.clone());
         self.output = Some(output);
         self.error = None;
+        self.notice = None;
         self.play_started = Some(Instant::now());
         self.log(Level::Info, &message)
     }
@@ -144,7 +153,13 @@ impl Player {
             ));
         }
         if event.rerouted {
-            self.device = Some(audio::default_output_name().unwrap_or_else(|| "unknown".into()));
+            // Stop at once rather than fading: the new output is often the laptop speakers.
+            self.close_stream();
+            let new_device = audio::default_output_name().unwrap_or_else(|| "unknown".into());
+            let notice = format!("Paused: output switched to {new_device}");
+            let message = format!("{notice} from `{device}`");
+            self.notice = Some(notice);
+            return self.log(Level::Info, &message);
         }
         let message = format!("stream event on `{device}`: {}", event.message);
         self.log(Level::Warn, &message)
@@ -275,5 +290,6 @@ mod tests {
         let mut player = player();
         player.record_error("no output".into());
         assert_eq!(player.error(), Some("no output"));
+        assert_eq!(player.message(), Some("no output"));
     }
 }

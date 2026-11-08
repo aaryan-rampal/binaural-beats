@@ -124,7 +124,7 @@ impl Session<'_> {
             terminal
                 .draw(|frame| ui::render(frame, app, &self.device))
                 .map_err(|error| format!("drawing interface: {error}; restart the terminal"))?;
-            self.handle_stream_events()?;
+            self.handle_stream_events(app)?;
             self.handle_input(app)?;
             app.tick(last_tick.elapsed());
             last_tick = Instant::now();
@@ -133,8 +133,9 @@ impl Session<'_> {
         Ok(())
     }
 
-    /// Logs glitches and reroutes, and stops the session when the stream itself has failed.
-    fn handle_stream_events(&mut self) -> Result<(), String> {
+    /// Logs glitches, stops the session when the stream has failed, and pauses when the
+    /// output switches, since the new output is often the laptop speakers.
+    fn handle_stream_events(&mut self, app: &mut App) -> Result<(), String> {
         while let Ok(event) = self.stream_events.try_recv() {
             if event.fatal {
                 return Err(format!(
@@ -143,7 +144,18 @@ impl Session<'_> {
                 ));
             }
             if event.rerouted {
-                self.device = audio::default_output_name().unwrap_or_else(|| "unknown".into());
+                app.playing = false;
+                self.shared.store(app.params());
+                let previous = std::mem::replace(
+                    &mut self.device,
+                    audio::default_output_name().unwrap_or_else(|| "unknown".into()),
+                );
+                let message = format!(
+                    "paused: output switched from `{previous}` to `{}`",
+                    self.device
+                );
+                self.logger.log(Level::Info, &message)?;
+                continue;
             }
             let message = format!("stream event on `{}`: {}", self.device, event.message);
             self.logger.log(Level::Warn, &message)?;

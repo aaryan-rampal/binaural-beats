@@ -249,8 +249,8 @@ impl Controller {
         items.output.setTitle(&NSString::from_str(&output));
         items
             .error
-            .setTitle(&NSString::from_str(player.error().unwrap_or_default()));
-        items.error.setHidden(player.error().is_none());
+            .setTitle(&NSString::from_str(player.message().unwrap_or_default()));
+        items.error.setHidden(player.message().is_none());
 
         let beat = format!("Beat: {}", beat_label(settings.beat_hz));
         items.beat.setTitle(&NSString::from_str(&beat));

@@ -10,7 +10,10 @@ version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$root/Cargo.toml" | head -1)"
 cargo build --release --bin binaural-bar --manifest-path "$root/Cargo.toml"
 
 mkdir -p "$app/Contents/MacOS"
-cp "$root/target/release/binaural-bar" "$app/Contents/MacOS/binaural-bar"
+# Copy then rename, so a running copy of the app keeps its original file instead of being
+# overwritten in place, which macOS can kill it for.
+cp "$root/target/release/binaural-bar" "$app/Contents/MacOS/binaural-bar.new"
+mv -f "$app/Contents/MacOS/binaural-bar.new" "$app/Contents/MacOS/binaural-bar"
 cat >"$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
