@@ -2,24 +2,22 @@
 
 mod app;
 mod args;
-mod audio;
-mod logging;
-mod synth;
 mod ui;
 
-use std::path::Path;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
+use binaural::audio;
+use binaural::logging::{Level, Logger, project_log_dir};
+use binaural::settings::Settings;
+use binaural::synth::{Params, SharedParams};
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 
-use crate::app::{App, Settings};
+use crate::app::App;
 use crate::args::Command;
-use crate::logging::{Level, Logger};
-use crate::synth::{Params, SharedParams};
 
 /// Redraw interval, about 30 frames per second.
 const FRAME: Duration = Duration::from_millis(33);
@@ -52,7 +50,7 @@ fn main() -> ExitCode {
 
 /// Runs one logged session and returns the line to print after the interface closes.
 fn run(settings: Settings) -> Result<String, String> {
-    let mut logger = Logger::create(Path::new("logs"))?;
+    let mut logger = Logger::create(&project_log_dir())?;
     let log_path = logger.path().display().to_string();
     logger.log(Level::Info, &format!("session start: {settings:?}"))?;
 
@@ -77,7 +75,10 @@ fn play(settings: Settings, logger: &mut Logger) -> Result<Duration, String> {
     let mut app = App::new(settings);
     let shared = Arc::new(SharedParams::new(app.params()));
     let (error_sender, stream_errors) = mpsc::channel();
-    let output = audio::start(Arc::clone(&shared), error_sender)?;
+    let output = audio::start(Arc::clone(&shared), move |error| {
+        // The receiver is gone only during shutdown, when a stream error no longer matters.
+        let _ = error_sender.send(error);
+    })?;
     logger.log(
         Level::Info,
         &format!(

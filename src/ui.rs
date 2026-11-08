@@ -10,7 +10,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::canvas::{self, Canvas};
 use ratatui::widgets::{Block, BorderType, Paragraph};
 
-use crate::app::{App, BANDS, Control};
+use binaural::settings::BANDS;
+
+use crate::app::{App, Control};
 
 const ACCENT: Color = Color::Cyan;
 const LABEL_WIDTH: usize = 8;
@@ -179,7 +181,9 @@ mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
-    use crate::app::{App, Settings};
+    use binaural::settings::Settings;
+
+    use crate::app::App;
     use crate::ui::{envelope_points, render};
 
     /// Renders `app` to a test terminal and returns its text.

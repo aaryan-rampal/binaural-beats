@@ -3,72 +3,13 @@
 use std::ops::RangeInclusive;
 use std::time::Duration;
 
+use binaural::settings::{BANDS, BEAT_RANGE, CARRIER_RANGE, Settings, VOLUME_RANGE, band_name};
+use binaural::synth::Params;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
-use crate::synth::Params;
-
-pub const CARRIER_RANGE: RangeInclusive<f32> = 50.0..=1000.0;
-pub const BEAT_RANGE: RangeInclusive<f32> = 0.5..=50.0;
-pub const VOLUME_RANGE: RangeInclusive<f32> = 0.0..=100.0;
 
 const CARRIER_STEP_HZ: f32 = 5.0;
 const BEAT_STEP_HZ: f32 = 0.5;
 const VOLUME_STEP_PCT: i8 = 5;
-
-/// EEG band names with the beat frequency each preset jumps to and the band's upper limit.
-pub const BANDS: [Band; 5] = [
-    Band {
-        name: "delta",
-        preset_hz: 2.0,
-        below_hz: 4.0,
-    },
-    Band {
-        name: "theta",
-        preset_hz: 6.0,
-        below_hz: 8.0,
-    },
-    Band {
-        name: "alpha",
-        preset_hz: 10.0,
-        below_hz: 13.0,
-    },
-    Band {
-        name: "beta",
-        preset_hz: 20.0,
-        below_hz: 30.0,
-    },
-    Band {
-        name: "gamma",
-        preset_hz: 40.0,
-        below_hz: f32::INFINITY,
-    },
-];
-
-/// A named beat-frequency band.
-pub struct Band {
-    pub name: &'static str,
-    pub preset_hz: f32,
-    below_hz: f32,
-}
-
-/// The user-adjustable values.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Settings {
-    pub carrier_hz: f32,
-    pub beat_hz: f32,
-    pub volume_pct: u8,
-}
-
-impl Default for Settings {
-    /// A low carrier, an alpha beat, and a quiet starting volume.
-    fn default() -> Self {
-        Self {
-            carrier_hz: 150.0,
-            beat_hz: 10.0,
-            volume_pct: 25,
-        }
-    }
-}
 
 /// A row in the controls panel.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -116,20 +57,12 @@ impl App {
 
     /// The audio targets for the current state; pausing is zero gain.
     pub fn params(&self) -> Params {
-        let volume = f32::from(self.settings.volume_pct) / 100.0;
-        Params {
-            carrier_hz: self.settings.carrier_hz,
-            beat_hz: self.settings.beat_hz,
-            gain: if self.playing { volume } else { 0.0 },
-        }
+        self.settings.params(self.playing)
     }
 
     /// The name of the band containing the current beat frequency.
     pub fn band_name(&self) -> &'static str {
-        BANDS
-            .iter()
-            .find(|band| self.settings.beat_hz < band.below_hz)
-            .map_or("gamma", |band| band.name)
+        band_name(self.settings.beat_hz)
     }
 
     /// Advances the play clock and the envelope display by `elapsed`.
@@ -229,7 +162,9 @@ mod tests {
 
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-    use crate::app::{App, Control, Settings};
+    use binaural::settings::Settings;
+
+    use crate::app::{App, Control};
 
     /// Sends a plain key press to `app`.
     fn press(app: &mut App, code: KeyCode) {

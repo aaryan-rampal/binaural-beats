@@ -1,11 +1,16 @@
-//! Per-run log file under `logs/`, using only the standard library.
+//! Per-run log file under the project's `logs/` folder, using only the standard library.
 //!
-//! The TUI owns the terminal while running, so `main` prints the outcome and log path after exit.
+//! Neither app can log to a terminal while running: the TUI owns it and the menu bar app has none.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// The project's `logs/` folder, fixed at build time so it works from any working directory.
+pub fn project_log_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("logs")
+}
 
 /// Message severity, ordered from least to most severe.
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]

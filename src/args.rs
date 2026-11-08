@@ -2,7 +2,7 @@
 
 use std::ops::RangeInclusive;
 
-use crate::app::{BEAT_RANGE, CARRIER_RANGE, Settings, VOLUME_RANGE};
+use binaural::settings::{BEAT_RANGE, CARRIER_RANGE, Settings, VOLUME_RANGE};
 
 pub const USAGE: &str = "\
 binaural: binaural beat generator for the terminal (use headphones)
@@ -16,7 +16,7 @@ Options:
   -h, --help     Show this help
 
 Environment:
-  LOG_LEVEL      DEBUG, INFO, WARN or ERROR (default INFO); logs go to ./logs/";
+  LOG_LEVEL      DEBUG, INFO, WARN or ERROR (default INFO); logs go to the project logs/ folder";
 
 /// What the command line asks for.
 #[derive(Debug, PartialEq)]
@@ -60,7 +60,8 @@ fn value(flag: &str, raw: Option<String>, range: &RangeInclusive<f32>) -> Result
 
 #[cfg(test)]
 mod tests {
-    use crate::app::Settings;
+    use binaural::settings::Settings;
+
     use crate::args::{Command, parse};
 
     /// Parses a space-separated argument string.

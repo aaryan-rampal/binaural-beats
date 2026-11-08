@@ -1,7 +1,6 @@
 //! Connects the synth to the default output device.
 
 use std::sync::Arc;
-use std::sync::mpsc::Sender;
 
 use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -18,8 +17,11 @@ pub struct AudioOutput {
 
 /// Opens the default output device and starts rendering from `shared`.
 ///
-/// Stream failures after startup arrive on `errors`, because they happen on the audio thread.
-pub fn start(shared: Arc<SharedParams>, errors: Sender<String>) -> Result<AudioOutput, String> {
+/// Stream failures after startup go to `on_error`, which runs on the audio thread.
+pub fn start(
+    shared: Arc<SharedParams>,
+    mut on_error: impl FnMut(String) + Send + 'static,
+) -> Result<AudioOutput, String> {
     let device = cpal::default_host().default_output_device().ok_or(
         "opening audio output: no default output device; choose one in System Settings > Sound",
     )?;
@@ -58,10 +60,7 @@ pub fn start(shared: Arc<SharedParams>, errors: Sender<String>) -> Result<AudioO
             frame[2..].fill(0.0);
         }
     };
-    let report = move |error: cpal::Error| {
-        // The receiver is gone only during shutdown, when a stream error no longer matters.
-        let _ = errors.send(error.to_string());
-    };
+    let report = move |error: cpal::Error| on_error(error.to_string());
 
     let stream = device
         .build_output_stream::<f32, _, _>(supported.config(), render, report, None)
