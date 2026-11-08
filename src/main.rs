@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
-use binaural::audio;
+use binaural::audio::{self, StreamEvent};
 use binaural::logging::{Level, Logger, project_log_dir};
 use binaural::settings::Settings;
 use binaural::synth::{Params, SharedParams};
@@ -74,10 +74,10 @@ fn run(settings: Settings) -> Result<String, String> {
 fn play(settings: Settings, logger: &mut Logger) -> Result<Duration, String> {
     let mut app = App::new(settings);
     let shared = Arc::new(SharedParams::new(app.params()));
-    let (error_sender, stream_errors) = mpsc::channel();
-    let output = audio::start(Arc::clone(&shared), move |error| {
-        // The receiver is gone only during shutdown, when a stream error no longer matters.
-        let _ = error_sender.send(error);
+    let (event_sender, stream_events) = mpsc::channel();
+    let output = audio::start(Arc::clone(&shared), move |event| {
+        // The receiver is gone only during shutdown, when a stream event no longer matters.
+        let _ = event_sender.send(event);
     })?;
     logger.log(
         Level::Info,
@@ -92,8 +92,8 @@ fn play(settings: Settings, logger: &mut Logger) -> Result<Duration, String> {
     })?;
     let mut session = Session {
         shared: &shared,
-        stream_errors,
-        device: &output.device,
+        stream_events,
+        device: output.device.clone(),
         logger,
     };
     let result = session.event_loop(&mut terminal, &mut app);
@@ -110,8 +110,9 @@ fn play(settings: Settings, logger: &mut Logger) -> Result<Duration, String> {
 /// Everything the event loop needs besides the terminal and app state.
 struct Session<'a> {
     shared: &'a SharedParams,
-    stream_errors: Receiver<String>,
-    device: &'a str,
+    stream_events: Receiver<StreamEvent>,
+    /// Current output name; changes when the stream follows a new default output.
+    device: String,
     logger: &'a mut Logger,
 }
 
@@ -121,18 +122,31 @@ impl Session<'_> {
         let mut last_tick = Instant::now();
         while !app.should_quit {
             terminal
-                .draw(|frame| ui::render(frame, app, self.device))
+                .draw(|frame| ui::render(frame, app, &self.device))
                 .map_err(|error| format!("drawing interface: {error}; restart the terminal"))?;
-            if let Ok(error) = self.stream_errors.try_recv() {
-                return Err(format!(
-                    "audio stream on `{}` failed: {error}; reconnect the device and restart",
-                    self.device
-                ));
-            }
+            self.handle_stream_events()?;
             self.handle_input(app)?;
             app.tick(last_tick.elapsed());
             last_tick = Instant::now();
             self.shared.store(app.params());
+        }
+        Ok(())
+    }
+
+    /// Logs glitches and reroutes, and stops the session when the stream itself has failed.
+    fn handle_stream_events(&mut self) -> Result<(), String> {
+        while let Ok(event) = self.stream_events.try_recv() {
+            if event.fatal {
+                return Err(format!(
+                    "audio stream on `{}` failed: {}; reconnect the device and restart",
+                    self.device, event.message
+                ));
+            }
+            if event.rerouted {
+                self.device = audio::default_output_name().unwrap_or_else(|| "unknown".into());
+            }
+            let message = format!("stream event on `{}`: {}", self.device, event.message);
+            self.logger.log(Level::Warn, &message)?;
         }
         Ok(())
     }

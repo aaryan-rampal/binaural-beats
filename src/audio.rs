@@ -2,10 +2,46 @@
 
 use std::sync::Arc;
 
-use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{ErrorKind, SampleFormat};
 
 use crate::synth::{SharedParams, Synth};
+
+/// Something the stream reported from the audio thread.
+#[derive(Debug)]
+pub struct StreamEvent {
+    pub message: String,
+    /// Whether the stream stopped. Glitches and automatic reroutes leave it playing.
+    pub fatal: bool,
+    /// The stream moved to a new default output; read its name with [`default_output_name`].
+    pub rerouted: bool,
+}
+
+impl StreamEvent {
+    /// Classifies a cpal stream error.
+    fn from_error(error: &cpal::Error) -> Self {
+        let kind = error.kind();
+        let rerouted = kind == ErrorKind::DeviceChanged;
+        Self {
+            message: error.to_string(),
+            fatal: !rerouted && kind != ErrorKind::Xrun,
+            rerouted,
+        }
+    }
+}
+
+/// Name of the current default output device, if there is one.
+pub fn default_output_name() -> Option<String> {
+    let device = cpal::default_host().default_output_device()?;
+    Some(device_name(&device))
+}
+
+/// A device's display name, or "unknown" when the system will not say.
+fn device_name(device: &cpal::Device) -> String {
+    device
+        .description()
+        .map_or_else(|_| "unknown".into(), |d| d.name().to_string())
+}
 
 /// A running output stream. Audio stops when this is dropped.
 pub struct AudioOutput {
@@ -17,17 +53,16 @@ pub struct AudioOutput {
 
 /// Opens the default output device and starts rendering from `shared`.
 ///
-/// Stream failures after startup go to `on_error`, which runs on the audio thread.
+/// Stream events after startup go to `on_event`, which runs on the audio thread. The stream
+/// follows the system default output, so switching outputs reroutes it rather than failing.
 pub fn start(
     shared: Arc<SharedParams>,
-    mut on_error: impl FnMut(String) + Send + 'static,
+    mut on_event: impl FnMut(StreamEvent) + Send + 'static,
 ) -> Result<AudioOutput, String> {
     let device = cpal::default_host().default_output_device().ok_or(
         "opening audio output: no default output device; choose one in System Settings > Sound",
     )?;
-    let name = device
-        .description()
-        .map_or_else(|_| "unknown".into(), |d| d.name().to_string());
+    let name = device_name(&device);
     let supported = device.default_output_config().map_err(|error| {
         format!("reading config of output `{name}`: {error}; try another output device")
     })?;
@@ -60,7 +95,7 @@ pub fn start(
             frame[2..].fill(0.0);
         }
     };
-    let report = move |error: cpal::Error| on_error(error.to_string());
+    let report = move |error: cpal::Error| on_event(StreamEvent::from_error(&error));
 
     let stream = device
         .build_output_stream::<f32, _, _>(supported.config(), render, report, None)
@@ -75,4 +110,25 @@ pub fn start(
         sample_rate,
         channels,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use cpal::ErrorKind;
+
+    use crate::audio::StreamEvent;
+
+    /// Classifies a bare error of `kind`.
+    fn event(kind: ErrorKind) -> StreamEvent {
+        StreamEvent::from_error(&cpal::Error::from(kind))
+    }
+
+    #[test]
+    fn glitches_and_reroutes_keep_playing_but_disconnects_stop() {
+        assert!(!event(ErrorKind::Xrun).fatal);
+        let reroute = event(ErrorKind::DeviceChanged);
+        assert!(!reroute.fatal && reroute.rerouted);
+        assert!(event(ErrorKind::DeviceNotAvailable).fatal);
+        assert!(event(ErrorKind::StreamInvalidated).fatal);
+    }
 }
